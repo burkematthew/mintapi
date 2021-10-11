@@ -842,8 +842,8 @@ class Mint(object):
         # the transaction category ID
         for transaction in result:
             parent = self.get_category_object_from_id(transaction['categoryId'], categories)['parent']
-            transaction['parentCategoryName'] = parent['name']
-            transaction['parentCategoryId'] = parent['id']
+            transaction['parentCategoryName'] = '' if parent['name'] == 'Root' else parent['name']
+            transaction['parentCategoryId'] = '' if parent['name'] == 'Root' else parent['id']
 
         df = pd.DataFrame(result)
         df['odate'] = df['odate'].apply(json_date_to_datetime)
