@@ -1,4 +1,5 @@
 import atexit
+import configargparse
 from datetime import date, datetime, timedelta
 import io
 import json
@@ -55,8 +56,23 @@ def json_date_to_datetime(dateraw):
     try:
         newdate = datetime.strptime(dateraw + str(cy), '%b %d%Y')
     except ValueError:
-        newdate = datetime.strptime(dateraw, '%m/%d/%y')
+        newdate = convert_mmddyy_to_datetime(dateraw)
     return newdate
+
+
+def convert_mmddyy_to_datetime(date):
+    try:
+        newdate = datetime.strptime(date, '%m/%d/%y')
+    except (TypeError, ValueError):
+        newdate = None
+    return newdate
+
+
+def convert_date_to_string(date):
+    date_string = None
+    if date:
+        date_string = date.strftime('%m/%d/%Y')
+    return date_string
 
 
 def reverse_credit_amount(row):
@@ -384,6 +400,13 @@ def _sign_in(email, password, driver, mfa_method=None, mfa_token=None,
                         except (NoSuchElementException, ElementNotInteractableException):
                             pass  # no option to select email address
 
+                if mfa_method == 'sms':
+                    try:
+                        mfa_sms_select = driver.find_element_by_id("ius-mfa-sms-otp-card-challenge")
+                        mfa_sms_select.click()
+                    except (NoSuchElementException, ElementNotInteractableException):
+                        pass  # no option to select sms
+
                 try:
                     mfa_code_input = driver.find_element_by_id("ius-mfa-confirm-code")
                     mfa_code_input.clear()
@@ -408,7 +431,13 @@ def _sign_in(email, password, driver, mfa_method=None, mfa_token=None,
                 account_input = select_account.find_element_by_xpath(
                     "//label/span[text()='{}']/../preceding-sibling::input".format(intuit_account))
                 account_input.click()
-            driver.find_element_by_id("ius-sign-in-mfa-select-account-continue-btn").submit()
+
+            try:
+                continue_btn = driver.find_element_by_id("ius-sign-in-mfa-select-account-continue-btn")
+                continue_btn.submit()
+            except NoSuchElementException:
+                continue_btn = driver.find_element_by_css_selector('[data-testid="SelectAccountContinueButton"]')
+                continue_btn.click()
         except NoSuchElementException:
             pass  # not on account selection screen
 
@@ -738,7 +767,8 @@ class Mint(object):
                 'Could not parse response to set_user_property')
 
     def get_transactions_json(self, include_investment=False,
-                              skip_duplicates=False, start_date=None, id=0):
+                              skip_duplicates=False,
+                              start_date=None, end_date=None, id=0):
         """Returns the raw JSON transaction data as downloaded from Mint.  The JSON
         transaction data includes some additional information missing from the
         CSV data, such as whether the transaction is pending or completed, but
@@ -754,11 +784,11 @@ class Mint(object):
         self.set_user_property(
             'hide_duplicates', 'T' if skip_duplicates else 'F')
 
-        # Converts the start date into datetime format - must be mm/dd/yy
-        try:
-            start_date = datetime.strptime(start_date, '%m/%d/%y')
-        except (TypeError, ValueError):
-            start_date = None
+        # Converts the start date into datetime format - input must be mm/dd/yy
+        start_date = convert_mmddyy_to_datetime(start_date)
+        # Converts the end date into datetime format - input must be mm/dd/yy
+        end_date = convert_mmddyy_to_datetime(end_date)
+
         all_txns = []
         offset = 0
         # Mint only returns some of the transactions at once.  To get all of
@@ -769,6 +799,8 @@ class Mint(object):
                 'queryNew': '',
                 'offset': offset,
                 'comparableType': '8',
+                'startDate': convert_date_to_string(start_date),
+                'endDate': convert_date_to_string(end_date),
                 'rnd': Mint.get_rnd(),
             }
             # Specifying accountId=0 causes Mint to return investment
@@ -788,14 +820,6 @@ class Mint(object):
             txns = data['set'][0].get('data', [])
             if not txns:
                 break
-            if start_date:
-                last_dt = json_date_to_datetime(txns[-1]['odate'])
-                if last_dt < start_date:
-                    keep_txns = [
-                        t for t in txns
-                        if json_date_to_datetime(t['odate']) >= start_date]
-                    all_txns.extend(keep_txns)
-                    break
             all_txns.extend(txns)
             offset += len(txns)
         return all_txns
@@ -803,14 +827,15 @@ class Mint(object):
     def get_detailed_transactions(self, include_investment=False,
                                   skip_duplicates=False,
                                   remove_pending=True,
-                                  start_date=None):
+                                  start_date=None,
+                                  end_date=None):
         """Returns the JSON transaction data as a DataFrame, and converts
         current year dates and prior year dates into consistent datetime
         format, and reverses credit activity.
 
-        Note: start_date must be in format mm/dd/yy. If pulls take too long,
-        use a more recent start date. See json explanations of
-        include_investment and skip_duplicates.
+        Note: start_date and end_date must be in format mm/dd/yy.
+        If pulls take too long, consider a narrower range of start and end
+        date. See json explanations of include_investment and skip_duplicates.
 
         Also note: Mint includes pending transactions, however these sometimes
         change dates/amounts after the transactions post. They have been
@@ -824,7 +849,8 @@ class Mint(object):
         categories = self.get_categories()
 
         result = self.get_transactions_json(include_investment,
-                                            skip_duplicates, start_date)
+                                            skip_duplicates,
+                                            start_date, end_date)
 
         # Finds the parent category name from the categories object based on
         # the transaction category ID
@@ -994,8 +1020,8 @@ class Mint(object):
         eleven_months_ago = (first_of_this_month - timedelta(days=330)).replace(day=1)
         url = "{}/getBudget.xevent".format(MINT_ROOT_URL)
         params = {
-            'startDate': eleven_months_ago.strftime('%m/%d/%Y'),
-            'endDate': first_of_this_month.strftime('%m/%d/%Y'),
+            'startDate': convert_date_to_string(eleven_months_ago),
+            'endDate': convert_date_to_string(first_of_this_month),
             'rnd': Mint.get_rnd(),
         }
         response = json.loads(self.get(url, params=params, headers=JSON_HEADER).text)
@@ -1159,6 +1185,52 @@ class Mint(object):
                 })
         return utilization
 
+    def parse_arguments(self, args):
+        ARGUMENTS = [
+            (('email', ), {'nargs': '?', 'default': None, 'help': 'The e-mail address for your Mint.com account'}),
+            (('password', ), {'nargs': '?', 'default': None, 'help': 'The password for your Mint.com account'}),
+            (('--accounts', ), {'action': 'store_true', 'dest': 'accounts', 'default': False, 'help': 'Retrieve account information (default if nothing else is specified)'}),
+            (('--attention', ), {'action': 'store_true', 'help': 'Display accounts that need attention (None if none).'}),
+            (('--budgets', ), {'action': 'store_true', 'dest': 'budgets', 'default': False, 'help': 'Retrieve budget information'}),
+            (('--budget_hist', ), {'action': 'store_true', 'dest': 'budget_hist', 'default': None, 'help': 'Retrieve 12-month budget history information'}),
+            (('--chromedriver-download-path', ), {'default': os.getcwd(), 'help': 'The directory to download chromedrive to.'}),
+            (('--config-file', '-c'), {'required': False, 'is_config_file': True, 'help': 'The path to the config file used.'}),
+            (('--credit-report', ), {'action': 'store_true', 'dest': 'credit_report', 'default': False, 'help': 'Retrieve full credit report'}),
+            (('--credit-score', ), {'action': 'store_true', 'dest': 'credit_score', 'default': False, 'help': 'Retrieve current credit score'}),
+            (('--end-date', ), {'nargs': '?', 'default': None, 'help': 'Latest date for transactions to be retrieved from. Used with --extended-transactions. Format: mm/dd/yy'}),
+            (('--extended-accounts', ), {'action': 'store_true', 'dest': 'accounts_ext', 'default': False, 'help': 'Retrieve extended account information (slower, implies --accounts)'}),
+            (('--extended-transactions', ), {'action': 'store_true', 'default': False, 'help': 'Retrieve transactions with extra information and arguments'}),
+            (('--filename', '-f'), {'help': 'write results to file. can be {csv,json} format. default is to write to stdout.'}),
+            (('--headless', ), {'action': 'store_true', 'help': 'Whether to execute chromedriver with no visible window.'}),
+            (('--imap-account', ), {'default': None, 'help': 'IMAP login account'}),
+            (('--imap-folder', ), {'default': 'INBOX', 'help': 'IMAP folder'}),
+            (('--imap-password', ), {'default': None, 'help': 'IMAP login password'}),
+            (('--imap-server', ), {'default': None, 'help': 'IMAP server'}),
+            (('--imap-test', ), {'action': 'store_true', 'help': 'Test imap login and retrieval.'}),
+            (('--include-investment', ), {'action': 'store_true', 'default': False, 'help': 'Used with --extended-transactions'}),
+            (('--keyring', ), {'action': 'store_true', 'help': 'Use OS keyring for storing password information'}),
+            (('--mfa-method', ), {'choices': ['sms', 'email', 'soft-token'], 'default': 'sms', 'help': 'The MFA method to automate.'}),
+            (('--mfa-token', ), {'default': None, 'help': 'The MFA soft-token to pass to oathtool.'}),
+            (('--net-worth', ), {'action': 'store_true', 'dest': 'net_worth', 'default': False, 'help': 'Retrieve net worth information'}),
+            (('--no_wait_for_sync', ), {'action': 'store_true', 'default': False, 'help': 'By default, mint api will wait for accounts to sync with the backing financial institutions. If this flag is present, do not wait for them to sync.'}),
+            (('--session-path', ), {'nargs': '?', 'default': os.path.join(os.path.expanduser("~"), '.mintapi', 'session'), 'help': 'Directory to save browser session, including cookies. Used to prevent repeated MFA prompts. Defaults to $HOME/.mintapi/session.  Set to None to use a temporary profile.'}),
+            # Displayed to the user as a postive switch, but processed back here as a negative
+            (('--show-pending', ), {'action': 'store_false', 'default': True, 'help': 'Exclude pending transactions from being retrieved. Used with --extended-transactions'}),
+            (('--skip-duplicates', ), {'action': 'store_true', 'default': False, 'help': 'Used with --extended-transactions'}),
+            (('--start-date', ), {'nargs': '?', 'default': None, 'help': 'Earliest date for transactions to be retrieved from. Used with --extended-transactions. Format: mm/dd/yy'}),
+            (('--transactions', '-t'), {'action': 'store_true', 'default': False, 'help': 'Retrieve transactions'}),
+            (('--use-chromedriver-on-path', ), {'action': 'store_true', 'help': 'Whether to use the chromedriver on PATH, instead of downloading a local copy.'}),
+            (('--wait_for_sync_timeout', ), {'type': int, 'default': 5 * 60, 'help': 'Number of seconds to wait for sync.  Default is 5 minutes'}),
+        ]
+
+        # Parse command-line arguments {{{
+        cmdline = configargparse.ArgumentParser()
+
+        for argument_commands, argument_options in ARGUMENTS:
+            cmdline.add_argument(*argument_commands, **argument_options)
+
+        return cmdline.parse_args(args)
+
 
 def get_accounts(email, password, get_detail=False):
     mint = Mint.create(email, password)
@@ -1211,189 +1283,16 @@ def initiate_account_refresh(email, password):
 
 def main():
     import getpass
-    import argparse
 
     try:
         import keyring
     except ImportError:
         keyring = None
 
-    # Parse command-line arguments {{{
-    cmdline = argparse.ArgumentParser()
-    cmdline.add_argument(
-        'email',
-        nargs='?',
-        default=None,
-        help='The e-mail address for your Mint.com account')
-    cmdline.add_argument(
-        'password',
-        nargs='?',
-        default=None,
-        help='The password for your Mint.com account')
-
-    home = os.path.expanduser("~")
-    default_session_path = os.path.join(home, '.mintapi', 'session')
-    cmdline.add_argument(
-        '--session-path',
-        nargs='?',
-        default=default_session_path,
-        help='Directory to save browser session, including cookies. '
-        'Used to prevent repeated MFA prompts. Defaults to '
-        '$HOME/.mintapi/session.  Set to None to use '
-        'a temporary profile.')
-    cmdline.add_argument(
-        '--accounts',
-        action='store_true',
-        dest='accounts',
-        default=False,
-        help='Retrieve account information'
-        '(default if nothing else is specified)')
-    cmdline.add_argument(
-        '--budgets',
-        action='store_true',
-        dest='budgets',
-        default=False,
-        help='Retrieve budget information')
-    cmdline.add_argument(
-        '--budget_hist',
-        action='store_true',
-        dest='budget_hist',
-        default=None,
-        help='Retrieve 12-month budget history information')
-    cmdline.add_argument(
-        '--net-worth',
-        action='store_true',
-        dest='net_worth',
-        default=False,
-        help='Retrieve net worth information')
-    cmdline.add_argument(
-        '--credit-score',
-        action='store_true',
-        dest='credit_score',
-        default=False,
-        help='Retrieve current credit score')
-    cmdline.add_argument(
-        '--credit-report',
-        action='store_true',
-        dest='credit_report',
-        default=False,
-        help='Retrieve full credit report')
-    cmdline.add_argument(
-        '--extended-accounts',
-        action='store_true',
-        dest='accounts_ext',
-        default=False,
-        help='Retrieve extended account information (slower, '
-        'implies --accounts)')
-    cmdline.add_argument(
-        '--transactions',
-        '-t',
-        action='store_true',
-        default=False,
-        help='Retrieve transactions')
-    cmdline.add_argument(
-        '--extended-transactions',
-        action='store_true',
-        default=False,
-        help='Retrieve transactions with extra information and arguments')
-    cmdline.add_argument(
-        '--start-date',
-        nargs='?',
-        default=None,
-        help='Earliest date for transactions to be retrieved from. '
-        'Used with --extended-transactions. Format: mm/dd/yy')
-    cmdline.add_argument(
-        '--include-investment',
-        action='store_true',
-        default=False,
-        help='Used with --extended-transactions')
-    cmdline.add_argument(
-        '--skip-duplicates',
-        action='store_true',
-        default=False,
-        help='Used with --extended-transactions')
-    # Displayed to the user as a postive switch, but processed back
-    # here as a negative
-    cmdline.add_argument(
-        '--show-pending',
-        action='store_false',
-        default=True,
-        help='Exclude pending transactions from being retrieved. '
-        'Used with --extended-transactions')
-    cmdline.add_argument(
-        '--filename', '-f',
-        help='write results to file. can '
-        'be {csv,json} format. default is to write to '
-        'stdout.')
-    cmdline.add_argument(
-        '--keyring',
-        action='store_true',
-        help='Use OS keyring for storing password '
-        'information')
-    cmdline.add_argument(
-        '--headless',
-        action='store_true',
-        help='Whether to execute chromedriver with no visible window.')
-    cmdline.add_argument(
-        '--use-chromedriver-on-path',
-        action='store_true',
-        help=('Whether to use the chromedriver on PATH, instead of '
-              'downloading a local copy.'))
-    cmdline.add_argument(
-        '--chromedriver-download-path',
-        default=os.getcwd(),
-        help=('The directory to download chromedrive to.'))
-    cmdline.add_argument(
-        '--mfa-method',
-        default='sms',
-        choices=['sms', 'email', 'soft-token'],
-        help='The MFA method to automate.')
-    cmdline.add_argument(
-        '--mfa-token',
-        default=None,
-        help='The MFA soft-token to pass to oathtool.')
-    cmdline.add_argument(
-        '--imap-account',
-        default=None,
-        help='IMAP login account')
-    cmdline.add_argument(
-        '--imap-password',
-        default=None,
-        help='IMAP login password')
-    cmdline.add_argument(
-        '--imap-server',
-        default=None,
-        help='IMAP server')
-    cmdline.add_argument(
-        '--imap-folder',
-        default="INBOX",
-        help='IMAP folder')
-    cmdline.add_argument(
-        '--imap-test',
-        action='store_true',
-        help='Test imap login and retrieval.')
-    cmdline.add_argument(
-        '--no_wait_for_sync',
-        action='store_true',
-        default=False,
-        help=('By default, mint api will wait for accounts to sync with the '
-              'backing financial institutions. If this flag is present, do '
-              'not wait for them to sync.'))
-    cmdline.add_argument(
-        '--wait_for_sync_timeout',
-        type=int,
-        default=5 * 60,
-        help=('Number of seconds to wait for sync.  Default is 5 minutes'))
-    cmdline.add_argument(
-        '--attention',
-        action='store_true',
-        help='Display accounts that need attention (None if none).')
-
-    options = cmdline.parse_args()
+    options = Mint.parse_arguments(sys.argv[1:])
 
     if options.keyring and not keyring:
-        cmdline.error('--keyring can only be used if the `keyring` '
-                      'library is installed.')
+        raise Exception('--keyring can only be used if the `keyring` library is installed.')
 
     try:  # python 2.x
         from __builtin__ import raw_input as input
@@ -1498,6 +1397,7 @@ def main():
     elif options.extended_transactions:
         data = mint.get_detailed_transactions(
             start_date=options.start_date,
+            end_date=options.end_date,
             include_investment=options.include_investment,
             remove_pending=options.show_pending,
             skip_duplicates=options.skip_duplicates)

@@ -1,3 +1,14 @@
+1.55
+---
+- add support for --config-file for specifying config options (github#309)
+- handle login flow change for SMS 2FA (gihub#318)
+- improve handling for change account continue button (github#316)
+
+1.54
+---
+- Add support for --end-date filtering for extended transactions (github#208)
+- start and end date filtering use native Mint capabilities (github#278)
+
 1.53
 ---
 - Ensure pip installs selenium-requests >= 1.3.3 (github#296)

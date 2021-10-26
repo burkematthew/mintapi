@@ -1,6 +1,9 @@
 # mintapi
 
-a screen-scraping API for Mint.com. [![Build Status](https://github.com/mintapi/mintapi/actions/workflows/ci.yml/badge.svg)](https://github.com/mintapi/mintapi/actions)
+[![Build Status](https://github.com/mintapi/mintapi/actions/workflows/ci.yml/badge.svg)](https://github.com/mintapi/mintapi/actions)
+[![PyPI Version](https://img.shields.io/pypi/v/mintapi)](https://pypi.org/project/mintapi/)
+
+An unofficial screen-scraping API for Mint.com.
 
 ## Community
 
@@ -28,6 +31,14 @@ headless (invisible) browser to log in and grab the account data. If this trigge
 an MFA prompt, you'll be prompted on the command line for your code, which by default
 goes to SMS unless you specify `--mfa-method=email`. This will also persist a browser
 session in $HOME/.mintapi/session to avoid an MFA in the future, unless you specify `--session-path=None`.
+
+If you wish to simplify the number of arguments passed in the command line, you can use a configuration file by specifying `--config-file`.  For arguments such as `--extended-transactions`, you can add a line in your config file that says `extended-transactions`.  For other arguments that have input, such as `--start-date`, you would add a line such as `start-date=10/01/21`.  There are two exceptions to what you can add to the config file: email and password.  Since these arguments do not include `--`, you cannot add them to the config file.
+
+### Linux Distributions (including Raspberry Pi OS)
+
+If you're running mintapi in a server environment on an automatic schedule, consider running mintapi in headless mode if you don't need to see the login workflow. In addition, you'll want to use your distribution's package manager to install chromium and chromedriver. Make sure your distribution is up-to-date and then install/update Chromium (debian-family example): `apt install chromium-browser chromium-chromedriver`. Then use the option `use_chromedriver_on_path` either through the CLI or the python api so that mintapi doesn't try to find a matching chromedriver.
+
+If you need to download the chromedriver manually, be sure to get the version that matches your chrome version and make the chromedriver available to your python interpreter either by putting the chromedriver in your python working directory or inside your `PATH` as described in the [python selenium documentation](https://www.selenium.dev/selenium/docs/api/py/index.html#drivers).
 
 ### MFA Authentication Methods
 
@@ -124,7 +135,8 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
 ```shell
     usage: mintapi [-h] [--session-path [SESSION_PATH]] [--accounts]
                    [--budgets | --budget_hist] [--net-worth] [--extended-accounts] [--transactions]
-                   [--extended-transactions] [--credit-score] [--credit-report] [--start-date [START_DATE]]
+                   [--extended-transactions] [--credit-score] [--credit-report]
+                   [--start-date [START_DATE]] [--end-date [END_DATE]]
                    [--include-investment] [--skip-duplicates] [--show-pending]
                    [--filename FILENAME] [--keyring] [--headless] [--attention]
                    [--mfa-method {sms,email,soft-token}]
@@ -144,6 +156,7 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
                             profile.
       --budgets             Retrieve budget information for current month
       --budget_hist         Retrieve historical budget information (past 12 months)
+      --config-file, -c     File used to store arguments
       --credit-score        Retrieve credit score
       --credit-report       Retrieve full credit report & history
       --net-worth           Retrieve net worth information
@@ -153,7 +166,10 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
                             Retrieve transactions with extra information and
                             arguments
       --start-date [START_DATE]
-                            Earliest date for transactions to be retrieved from.
+                            Earliest date for which to retrieve transactions.
+                            Used with --extended-transactions. Format: mm/dd/yy
+      --end-date [END_DATE]
+                            Latest date for which to retrieve transactions.
                             Used with --extended-transactions. Format: mm/dd/yy
       --include-investment  Used with --extended-transactions
       --skip-duplicates     Used with --extended-transactions
