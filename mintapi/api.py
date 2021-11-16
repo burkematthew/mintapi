@@ -1171,12 +1171,45 @@ class Mint(object):
                 })
         return utilization
 
+    def get_asset_data(self):
+        input = {
+           "reportType":"AT",
+           "chartType":"P",
+           "comparison":"",
+           "matchAny":"true",
+           "terms":[],
+           "accounts":{
+              "groupIds":[
+                 "AA"
+              ],
+              "accountIds":[],
+              "count":"6"
+           },
+           "dateRange":{
+              "period":{
+                 "label":"Custom",
+                 "value":"CS"
+              },
+              "start":"9/1/2021",
+              "end":"9/30/2021"
+           },
+           "categoryTypeFilter":"all"
+        }
+
+        data = {'searchQuery': input, 'token': self.token}
+        response = self.make_post_request(url='{}/trenddata.xevent'.format(MINT_ROOT_URL),
+                                          data=data)
+        if result.status_code != 200:
+            raise MintException('Received HTTP error %d' % result.status_code)
+        return True
+
 
 def parse_arguments(args):
     ARGUMENTS = [
         (('email', ), {'nargs': '?', 'default': None, 'help': 'The e-mail address for your Mint.com account'}),
         (('password', ), {'nargs': '?', 'default': None, 'help': 'The password for your Mint.com account'}),
         (('--accounts', ), {'action': 'store_true', 'dest': 'accounts', 'default': False, 'help': 'Retrieve account information (default if nothing else is specified)'}),
+        (('--assets', ), {'action': 'store_true', 'dest': 'assets', 'default': False, 'help': 'Retrieve asset data over time'}),
         (('--attention', ), {'action': 'store_true', 'help': 'Display accounts that need attention (None if none).'}),
         (('--budgets', ), {'action': 'store_true', 'dest': 'budgets', 'default': False, 'help': 'Retrieve budget information'}),
         (('--budget_hist', ), {'action': 'store_true', 'dest': 'budget_hist', 'default': None, 'help': 'Retrieve 12-month budget history information'}),
@@ -1307,7 +1340,7 @@ def main():
 
     if not any([options.accounts, options.budgets, options.transactions,
                 options.extended_transactions, options.net_worth, options.credit_score,
-                options.credit_report, options.attention]):
+                options.credit_report, options.attention, options.assets]):
         options.accounts = True
 
     if options.session_path == 'None':
@@ -1389,6 +1422,8 @@ def main():
         data = mint.get_credit_score()
     elif options.credit_report:
         data = mint.get_credit_report(details=True)
+    elif options.assets:
+        data = mint.get_asset_data()
 
     # output the data
     if options.transactions or options.extended_transactions:
