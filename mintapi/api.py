@@ -865,6 +865,15 @@ class Mint(object):
             headers=self._get_api_key_header(),
         ).json()
 
+    def __call_assets_endpoint(self, data):
+        return self.request_and_check(
+                url="{}/pfm/v1/trends".format(MINT_ROOT_URL),
+                method="post",
+                headers=self._get_api_key_header(),
+                data=data,
+                expected_content_type="text/json|application/json",
+            )
+
     def get_accounts(self, get_detail=False):  # {{{
         # Issue service request.
         req_id = self.get_request_id_str()
@@ -1421,34 +1430,19 @@ class Mint(object):
 
     def get_asset_data(self):
         input = {
-           "reportType":"AT",
-           "chartType":"P",
-           "comparison":"",
-           "matchAny":"true",
-           "terms":[],
-           "accounts":{
-              "groupIds":[
-                 "AA"
-              ],
-              "accountIds":[],
-              "count":"6"
+           "dateFilter":
+           {
+                "type": "THIS_MONTH"
            },
-           "dateRange":{
-              "period":{
-                 "label":"Custom",
-                 "value":"CS"
-              },
-              "start":"9/1/2021",
-              "end":"9/30/2021"
-           },
-           "categoryTypeFilter":"all"
+           "reportView":
+           {
+                "type": "ASSETS_TIME"
+           }
         }
-
-        data = {'searchQuery': input, 'token': self.token}
-        response = self.make_post_request(url='{}/trenddata.xevent'.format(MINT_ROOT_URL),
-                                          data=data)
-        if result.status_code != 200:
-            raise MintException('Received HTTP error %d' % result.status_code)
+        response = self.__call_assets_endpoint(input)
+        print(response)
+        if response.status_code != 200:
+            raise MintException('Received ' % response.content)
         return True
 
 
