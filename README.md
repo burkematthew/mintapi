@@ -179,6 +179,7 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
                    [--include-investment] [--skip-duplicates] [--show-pending]
                    [--filename FILENAME] [--keyring] [--headless] [--attention]
                    [--mfa-method {sms,email,soft-token}]
+                   [--intuit-account]
                    email [password]
 
     positional arguments:
@@ -213,6 +214,7 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
       --end-date [END_DATE]
                             Latest date for which to retrieve transactions.
                             Used with --transactions or --extended-transactions. Format: mm/dd/yy
+      --intuit-account      Designate a specific Intuit account if you have multiple associated with your email address.
       --investments         Retrieve data related to your investments, whether they be retirement or         personal stock purchases
       --include-investment  Used with --extended-transactions
       --skip-duplicates     Used with --extended-transactions

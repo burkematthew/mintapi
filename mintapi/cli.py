@@ -170,6 +170,14 @@ def parse_arguments(args):
             {"action": "store_true", "help": "Test imap login and retrieval."},
         ),
         (
+            ("--intuit-account",),
+            {
+                "nargs": "?",
+                "default": None,
+                "help": "Designate a specific Intuit account if you have multiple associated with your email address.",
+            },
+        ),
+        (
             ("--investments",),
             {
                 "action": "store_true",
@@ -379,6 +387,7 @@ def main():
         imap_password=imap_password,
         imap_server=options.imap_server,
         imap_folder=options.imap_folder,
+        intuit_account=options.intuit_account,
         wait_for_sync=not options.no_wait_for_sync,
         wait_for_sync_timeout=options.wait_for_sync_timeout,
         use_chromedriver_on_path=options.use_chromedriver_on_path,

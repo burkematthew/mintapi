@@ -484,29 +484,7 @@ def sign_in(
         except NoSuchElementException:
             pass  # not on mfa screen
 
-        # account selection screen -- if there are multiple accounts, select one
-        try:
-            select_account = driver.find_element_by_id("ius-mfa-select-account-section")
-            if intuit_account is not None:
-                account_input = select_account.find_element_by_xpath(
-                    "//label/span[text()='{}']/../preceding-sibling::input".format(
-                        intuit_account
-                    )
-                )
-                account_input.click()
-
-            try:
-                continue_btn = driver.find_element_by_id(
-                    "ius-sign-in-mfa-select-account-continue-btn"
-                )
-                continue_btn.submit()
-            except NoSuchElementException:
-                continue_btn = driver.find_element_by_css_selector(
-                    '[data-testid="SelectAccountContinueButton"]'
-                )
-                continue_btn.click()
-        except NoSuchElementException:
-            pass  # not on account selection screen
+        self.account_selection_screen(driver, intuit_account)
 
         # password only sometimes after mfa
         try:
@@ -542,6 +520,31 @@ def sign_in(
                 "Data retrieved may not be current."
             )
     return status_message, get_token(driver)
+
+    def account_selection_screen(self, driver, intuit_account):
+        # account selection screen -- if there are multiple accounts, select one
+        try:
+            select_account = driver.find_element_by_id("ius-mfa-select-account-section")
+            if intuit_account is not None:
+                account_input = select_account.find_element_by_xpath(
+                    "//label/span[text()='{}']/../preceding-sibling::input".format(
+                        intuit_account
+                    )
+                )
+                account_input.click()
+
+            try:
+                continue_btn = driver.find_element_by_id(
+                    "ius-sign-in-mfa-select-account-continue-btn"
+                )
+                continue_btn.submit()
+            except NoSuchElementException:
+                continue_btn = driver.find_element_by_css_selector(
+                    '[data-testid="SelectAccountContinueButton"]'
+                )
+                continue_btn.click()
+        except NoSuchElementException:
+            pass  # not on account selection screen
 
 
 def get_web_driver(
