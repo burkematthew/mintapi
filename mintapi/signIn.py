@@ -403,7 +403,7 @@ def sign_in(
             print("CAPTCHA page detected, Will try to just click the box")
             try:
                 driver.switch_to_frame(driver.find_elements_by_tag_name("iframe")[0])
-                CheckBox = WebDriverWait(driver, 2).until(
+                CheckBox = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID ,"recaptcha-anchor"))
                 ) 
             # *************  click CheckBox  ***************
