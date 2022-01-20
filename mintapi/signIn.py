@@ -1,6 +1,7 @@
 from datetime import datetime
 import email
 import email.header
+from email.parser import Parser
 import imaplib
 import json
 import io
@@ -14,6 +15,7 @@ import time
 import zipfile
 import warnings
 
+
 from selenium.common.exceptions import (
     ElementNotInteractableException,
     ElementNotVisibleException,
@@ -24,8 +26,10 @@ from selenium.common.exceptions import (
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from seleniumrequests import Chrome
+from selenium.webdriver import ActionChains
 
 import oathtool
 
@@ -38,28 +42,50 @@ MFA_METHOD_LABEL = "mfa_method"
 INPUT_CSS_SELECTORS_LABEL = "input_css_selectors"
 SPAN_CSS_SELECTORS_LABEL = "span_css_selectors"
 BUTTON_CSS_SELECTORS_LABEL = "button_css_selectors"
+MFA_PROMT_TEXT = "mfa_promt_text"
+PAGE_PROMT_TEXT="Text match on page that will tell us what function to use"
+PAGE_METHOD=""
 
-MFA_METHODS = [
+SIGNIN_PAGES = [
     {
+        PAGE_METHOD: "password",
+        PAGE_PROMT_TEXT: "//*[text()='Enter your Intuit password']", 
+    },
+    {
+        PAGE_METHOD: "multiple",
+        PAGE_PROMT_TEXT: "//*[text()='We found your accounts']",
+    },
+    {
+        PAGE_METHOD: MFA_VIA_EMAIL,
+        PAGE_PROMT_TEXT: "//*[text()='Check your email']",
+        MFA_METHOD_LABEL: MFA_VIA_EMAIL,
+        INPUT_CSS_SELECTORS_LABEL: "input[pattern='[0-9]*']",
+        SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"]',
+        BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-otp-submit-btn, [data-testid="VerifyOtpSubmitButton"]',
+    },
+    {
+        PAGE_METHOD: MFA_VIA_SOFT_TOKEN,
+        PAGE_PROMT_TEXT: "//*[text()='Enter your verification code']",
         MFA_METHOD_LABEL: MFA_VIA_SOFT_TOKEN,
         INPUT_CSS_SELECTORS_LABEL: '#iux-mfa-soft-token-verification-code, #ius-mfa-soft-token, [data-testid="VerifySoftTokenInput"]',
         SPAN_CSS_SELECTORS_LABEL: "",
         BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-soft-token-submit-btn, [data-testid="VerifySoftTokenSubmitButton"]',
     },
     {
-        MFA_METHOD_LABEL: MFA_VIA_EMAIL,
-        INPUT_CSS_SELECTORS_LABEL: "#ius-label-mfa-email-otp, #ius-mfa-email-otp-card-challenge, #ius-sublabel-mfa-email-otp",
-        SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"]',
-        BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-otp-submit-btn, [data-testid="VerifyOtpSubmitButton"]',
-    },
-    {
+        PAGE_METHOD: MFA_VIA_SMS,
+        PAGE_PROMT_TEXT: "//*[text()='Check your phone']",
         MFA_METHOD_LABEL: MFA_VIA_SMS,
         INPUT_CSS_SELECTORS_LABEL: "#ius-mfa-sms-otp-card-challenge, #ius-mfa-confirm-code",
         SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"]',
         BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-otp-submit-btn, [data-testid="VerifyOtpSubmitButton"]',
     },
+    {
+        PAGE_METHOD: "captcha",
+        PAGE_PROMT_TEXT: "//*[text()=\"We need to make sure you're not a robot\"]",
+        BUTTON_CSS_SELECTORS_LABEL: "//input[@value='Continue']",
+    },    
+    
 ]
-
 DEFAULT_MFA_INPUT_PROMPT = "Please enter your 6-digit MFA code: "
 
 STANDARD_MISSING_EXCEPTIONS = (
@@ -138,17 +164,14 @@ def get_email_code(
 
             if diff.seconds > 180:
                 continue
-
+            code = ""
             logger.debug("DEBUG: EMAIL HEADER OK")
-
-            body = str(msg)
-
-            p = re.search(r"Verification code:<.*?(\d\d\d\d\d\d)$", body, re.S | re.M)
-            if p:
-                code = p.group(1)
-            else:
-                logger.error("FAIL1")
-
+            # get the email body
+            body = msg.get_payload(decode=True).decode()
+            if body:
+                p=re.search(r"Verification code:<.*?(\d\d\d\d\d\d)",body,re.S)
+                if p:
+                    code = p.group(1)
             logger.debug("DEBUG: CODE FROM EMAIL:", code)
 
             if code != "":
@@ -169,7 +192,6 @@ def get_email_code(
 
     imap_client.logout()
     return code
-
 
 CHROME_DRIVER_BASE_URL = "https://chromedriver.storage.googleapis.com/"
 CHROME_DRIVER_DOWNLOAD_PATH = "{version}/chromedriver_{arch}.zip"
@@ -295,7 +317,8 @@ def _create_web_driver_at_mint_com(
         # chrome_options.add_argument("--window-size=1920x1080")
     if session_path is not None:
         chrome_options.add_argument("user-data-dir=%s" % session_path)
-
+    chrome_options.add_experimental_option("useAutomationExtension", False)
+    chrome_options.add_experimental_option("excludeSwitches",["enable-automation"])
     if use_chromedriver_on_path:
         driver = Chrome(options=chrome_options)
     else:
@@ -358,22 +381,55 @@ def sign_in(
     driver.implicitly_wait(1)  # seconds
     while not driver.current_url.startswith("https://mint.intuit.com/overview.event"):
         bypass_verified_user_page(driver)
-        if mfa_method is not None:
-            mfa_selection_page(driver, mfa_method)
-        mfa_page(
-            driver,
-            mfa_method,
-            mfa_token,
-            mfa_input_callback,
-            imap_account,
-            imap_password,
-            imap_server,
-            imap_folder,
-        )
-        account_selection_page(driver, intuit_account)
-        password_page(driver, password)
+        page_type=""
+        page_type=search_page_type(driver) # find the page type!
+        if page_type == "multiple": # multiple accounts
+            account_selection_page(driver, intuit_account)
+        elif page_type == "password":
+            password_page(driver, password)
+        elif page_type == MFA_VIA_SOFT_TOKEN or page_type == MFA_VIA_EMAIL or page_type == MFA_VIA_SMS:                  
+            mfa_method = page_type
+            mfa_page(
+                driver,
+                 mfa_method,
+                 mfa_token,
+                 mfa_input_callback,
+                 imap_account,
+                 imap_password,
+                 imap_server,
+                 imap_folder,
+            )
+        elif page_type == "captcha":
+            print("CAPTCHA page detected, Will try to just click the box")
+            try:
+                driver.switch_to_frame(driver.find_elements_by_tag_name("iframe")[0])
+                CheckBox = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID ,"recaptcha-anchor"))
+                ) 
+            # *************  click CheckBox  ***************
+            #wait_between(0.5, 0.7)  
+                # making click on captcha CheckBox 
+                CheckBox.click()
+                time.sleep(3)
+                driver.switch_to.default_content()
+                item = filter(
+                lambda x:(x[PAGE_METHOD] == page_type ),SIGNIN_PAGES
+                )
+                result = list(item)[0]
+                button = driver.find_element_by_xpath(
+                result[BUTTON_CSS_SELECTORS_LABEL]
+              )
+                button.click()
+            except:
+                driver.switch_to.default_content()
+                print("Unable to complete CAPTCHA, please complete it manually. Sleeping for 15 seconds")
+                time.sleep(15)  
+                             
+        else:    
+            if mfa_method is not None:
+                mfa_selection_page(driver, mfa_method)
 
-    driver.implicitly_wait(20)  # seconds
+        driver.implicitly_wait(1)  # seconds
 
     # Wait until the overview page has actually loaded, and if wait_for_sync==True, sync has completed.
     status_message = None
@@ -454,10 +510,9 @@ def mfa_page(
     imap_server,
     imap_folder,
 ):
-    if mfa_method is None:
-        mfa_result = search_mfa_method(driver)
-    else:
-        mfa_result = set_mfa_method(driver, mfa_method)
+    #mfa_result = search_mfa_method(driver,mfa_method)
+    mfa_result = set_mfa_method(driver, mfa_method)
+    
     mfa_token_input = mfa_result[0]
     mfa_token_button = mfa_result[1]
     mfa_method = mfa_result[2]
@@ -482,35 +537,38 @@ def mfa_page(
         handle_other_mfa(driver, mfa_token_input, mfa_token_button, mfa_input_callback)
 
 
-def search_mfa_method(driver):
-    for method in MFA_METHODS:
-        mfa_token_input = mfa_token_button = mfa_method = span_text = result = None
-        try:
-            mfa_token_input = driver.find_element_by_css_selector(
-                method[INPUT_CSS_SELECTORS_LABEL]
-            )
-            mfa_token_button = driver.find_element_by_css_selector(
-                method[BUTTON_CSS_SELECTORS_LABEL]
-            )
-            span_text = driver.find_element_by_css_selector(
-                method[SPAN_CSS_SELECTORS_LABEL]
-            ).text
-            mfa_method = method[MFA_METHOD_LABEL]
-            if span_text is not None:
-                result = span_text.find(mfa_method)
-                if result != -1:
-                    break
-            else:
-                break
-        except (NoSuchElementException, ElementNotInteractableException):
-            pass
-    return mfa_token_input, mfa_token_button, mfa_method
+def search_mfa_method(driver, mfa_method):
+  if not (mfa_method == MFA_VIA_SOFT_TOKEN or mfa_method == MFA_VIA_EMAIL or mfa_method == MFA_VIA_SMS):
+      return
+  for type in SIGNIN_PAGES:
+    mfa_token_input = mfa_token_button = mfa_method = span_text = result = None
+    try:
+        if mfa_method == type[PAGE_METHOD]:
+            mfa_token_input = driver.find_element_by_css_selector(type[INPUT_CSS_SELECTORS_LABEL])
+            mfa_token_button = driver.find_element_by_css_selector(type[BUTTON_CSS_SELECTORS_LABEL])
+            mfa_method = type[MFA_METHOD_LABEL]
+            return mfa_token_input, mfa_token_button, mfa_method            
+    except:
+      pass
+  return
 
+def search_page_type(driver):
+  for page in SIGNIN_PAGES:
+    try:
+      type=driver.find_element_by_xpath(page[PAGE_PROMT_TEXT])
+      if type:
+        if type.is_displayed():
+            page_type= page[PAGE_METHOD]
+            return page_type
+      else:
+        break
+    except (NoSuchElementException, ElementNotInteractableException):
+      pass
+  return "Not found"
 
 def set_mfa_method(driver, mfa_method):
     mfa = filter(
-        lambda method: method[MFA_METHOD_LABEL] == mfa_method,
-        MFA_METHODS,
+        lambda method:(method[PAGE_METHOD] == mfa_method),SIGNIN_PAGES
     )
     mfa_result = list(mfa)[0]
     try:
@@ -534,7 +592,7 @@ def handle_soft_token(
             mfa_code = oathtool.generate_otp(mfa_token)
         else:
             mfa_code = (mfa_input_callback or input)(DEFAULT_MFA_INPUT_PROMPT)
-        submit_mfa_code(driver, mfa_token_input, mfa_token_button)
+        submit_mfa_code(driver, mfa_token_input, mfa_token_button,mfa_code)
     except (NoSuchElementException, ElementNotInteractableException):
         pass
 
@@ -549,6 +607,7 @@ def handle_email_by_imap(
     imap_server,
     imap_folder,
 ):
+ #   wait = new WebDriverWait(driver, 120)
     try:
         mfa_code = get_email_code(
             imap_account,
@@ -556,8 +615,12 @@ def handle_email_by_imap(
             imap_server,
             imap_folder,
         )
-        mfa_code = (mfa_input_callback or input)(DEFAULT_MFA_INPUT_PROMPT)
-        submit_mfa_code(driver, mfa_token_input, mfa_token_button)
+        if mfa_code:
+          submit_mfa_code(driver, mfa_token_input, mfa_token_button,mfa_code)
+        else:
+          mfa_code = (mfa_input_callback or input)(DEFAULT_MFA_INPUT_PROMPT)
+          submit_mfa_code(driver, mfa_token_input, mfa_token_button,mfa_code)    
+       
     except (NoSuchElementException, ElementNotInteractableException):
         pass
 
@@ -565,12 +628,12 @@ def handle_email_by_imap(
 def handle_other_mfa(driver, mfa_token_input, mfa_token_button, mfa_input_callback):
     try:
         mfa_code = (mfa_input_callback or input)(DEFAULT_MFA_INPUT_PROMPT)
-        submit_mfa_code(driver, mfa_token_input, mfa_token_button)
+        submit_mfa_code(driver, mfa_token_input, mfa_token_button,mfa_code)
     except (NoSuchElementException, ElementNotInteractableException):
         pass
 
 
-def submit_mfa_code(driver, mfa_token_input, mfa_token_button):
+def submit_mfa_code(driver, mfa_token_input, mfa_token_button,mfa_code):
     mfa_token_input.clear()
     mfa_token_input.send_keys(mfa_code)
     mfa_token_button.click()
@@ -581,13 +644,14 @@ def account_selection_page(driver, intuit_account):
     try:
         select_account = driver.find_element_by_id("ius-mfa-select-account-section")
         if intuit_account is not None:
+   
             account_input = select_account.find_element_by_xpath(
-                "//label/span[text()='{}']/../preceding-sibling::input".format(
+                "//span[text()='{}']/preceding::input[1]".format(
                     intuit_account
-                )
             )
-            account_input.click()
-
+            )
+            action = ActionChains(driver)
+            action.move_to_element(account_input).click().perform()            
         mfa_code_submit = driver.find_element_by_css_selector(
             '#ius-sign-in-mfa-select-account-continue-btn, [data-testid="SelectAccountContinueButton"]'
         )
