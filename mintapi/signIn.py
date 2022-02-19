@@ -365,6 +365,7 @@ def sign_in(
         # Wait until logged in, just in case we need to deal with MFA.
         driver.implicitly_wait(1)  # seconds
         bypass_verified_user_page(driver)
+        bypass_sign_in_without_password_page(driver)
         if mfa_method is not None:
             mfa_selection_page(driver, mfa_method)
         mfa_page(
@@ -428,10 +429,9 @@ def handle_different_page_username_password(driver, email, password):
                 break
 
 
-def bypass_verified_user_page(driver):
-    # bypass "Let's add your current mobile number" interstitial page
+def bypass_page(driver, id):
     try:
-        skip_for_now = driver.find_element_by_id("ius-verified-user-update-btn-skip")
+        skip_for_now = driver.find_element_by_id(id)
         skip_for_now.click()
     except (
         NoSuchElementException,
@@ -440,6 +440,16 @@ def bypass_verified_user_page(driver):
         ElementNotInteractableException,
     ):
         pass
+
+
+def bypass_verified_user_page(driver):
+    # bypass "Let's add your current mobile number" interstitial page
+    bypass_page(driver, "ius-verified-user-update-btn-skip")
+
+
+def bypass_sign_in_without_password_page(driver):
+    # bypass "Sign in without a password next time" interstitial page
+    bypass_page(driver, "skipWebauthnRegistration")
 
 
 def mfa_selection_page(driver, mfa_method):
@@ -468,7 +478,13 @@ def mfa_page(
     if mfa_method is None:
         mfa_result = search_mfa_method(driver)
     else:
-        mfa_result = set_mfa_method(driver, mfa_method)
+        try:
+            mfa_result = set_mfa_method(driver, mfa_method)
+        except Exception as e:
+            # MFA is optional for devices that were registered to Mint by clicking on "Remember my device"
+            logger.info(str(e))
+            return
+
     mfa_token_input = mfa_result[0]
     mfa_token_button = mfa_result[1]
     mfa_method = mfa_result[2]
@@ -531,7 +547,9 @@ def set_mfa_method(driver, mfa_method):
         )
         mfa_method = mfa_result[MFA_METHOD_LABEL]
     except (NoSuchElementException, ElementNotInteractableException):
-        raise RuntimeError("The Multifactor Method supplied is not available.")
+        raise RuntimeError(
+            f"The Multifactor Method ({mfa_method}) supplied is not available."
+        )
     return mfa_token_input, mfa_token_button, mfa_method
 
 
