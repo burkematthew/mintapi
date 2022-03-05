@@ -413,17 +413,24 @@ def handle_same_page_username_password(driver, email, password):
     email_input.clear()  # clear email and user specified email
     email_input.send_keys(email)
     driver.find_element_by_id("ius-password").send_keys(password)
-    driver.find_element_by_id("ius-sign-in-submit-btn").submit()
+    driver.find_element_by_css_selector(
+        '#ius-sign-in-submit-btn, [data-testid="IdentifierFirstSubmitButton"]'
+    ).submit()
 
 
 def handle_different_page_username_password(driver, email, password):
     try:
-        email_input = driver.find_element_by_id("ius-identifier")
+        email_input = driver.find_element_by_css_selector(
+            '#ius-identifier, [data-testid="IdentifierFirstIdentifierInput"]'
+        )
         if not email_input.is_displayed():
             raise ElementNotVisibleException()
         email_input.clear()  # clear email and use specified email
         email_input.send_keys(email)
-        driver.find_element_by_id("ius-identifier-first-submit-btn").click()
+        driver.find_element_by_css_selector(
+            '#ius-identifier-first-submit-btn, [data-testid="IdentifierFirstSubmitButton"]'
+        ).click()
+
     # click on username if on the saved usernames page
     except (ElementNotInteractableException, ElementNotVisibleException):
         username_elements = driver.find_elements_by_class_name("ius-option-username")
