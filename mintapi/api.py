@@ -17,6 +17,7 @@ BUDGET_KEY = "Budget"
 CATEGORY_KEY = "Category"
 INVESTMENT_KEY = "Investment"
 TRANSACTION_KEY = "Transaction"
+TREND_KEY = "Trend"
 
 ENDPOINTS = {
     ACCOUNT_KEY: {
@@ -25,6 +26,8 @@ ENDPOINTS = {
         "beginningDate": None,
         "endingDate": None,
         "includeCreatedDate": True,
+        "includeLastUpdatedDate": True,
+        "type": None,
     },
     BUDGET_KEY: {
         "apiVersion": "pfm/v1",
@@ -32,6 +35,8 @@ ENDPOINTS = {
         "beginningDate": "startDate",
         "endingDate": "endDate",
         "includeCreatedDate": True,
+        "includeLastUpdatedDate": True,
+        "type": None,
     },
     CATEGORY_KEY: {
         "apiVersion": "pfm/v1",
@@ -39,6 +44,8 @@ ENDPOINTS = {
         "beginningDate": None,
         "endingDate": None,
         "includeCreatedDate": False,
+        "includeLastUpdatedDate": True,
+        "type": None,
     },
     INVESTMENT_KEY: {
         "apiVersion": "pfm/v1",
@@ -46,6 +53,8 @@ ENDPOINTS = {
         "beginningDate": None,
         "endingDate": None,
         "includeCreatedDate": False,
+        "includeLastUpdatedDate": True,
+        "type": None,
     },
     TRANSACTION_KEY: {
         "apiVersion": "pfm/v1",
@@ -53,6 +62,17 @@ ENDPOINTS = {
         "beginningDate": "fromDate",
         "endingDate": "toDate",
         "includeCreatedDate": False,
+        "includeLastUpdatedDate": True,
+        "type": None,
+    },
+    TREND_KEY: {
+        "apiVersion": "pfm/v1",
+        "endpoint": "trends",
+        "beginningDate": None,
+        "endingDate": None,
+        "includeCreatedDate": False,
+        "includeLastUpdatedDate": False,
+        "type": "ASSETS_TIME",
     },
 }
 
@@ -225,7 +245,8 @@ class Mint(object):
             for i in data[name]:
                 if endpoint["includeCreatedDate"]:
                     i["createdDate"] = i["metaData"]["createdDate"]
-                i["lastUpdatedDate"] = i["metaData"]["lastUpdatedDate"]
+                if endpoint["includeLastUpdatedDate"]:
+                    i["lastUpdatedDate"] = i["metaData"]["lastUpdatedDate"]
                 i.pop("metaData", None)
         else:
             raise MintException(
@@ -237,6 +258,14 @@ class Mint(object):
 
     def get_account_data(self):
         return self.get_data(ACCOUNT_KEY)
+
+    def get_asset_trends(self, start_date=None, end_date=None):
+        return self.get_data(
+            TREND_KEY,
+            None,
+            convert_mmddyy_to_datetime(start_date),
+            convert_mmddyy_to_datetime(end_date),
+        )
 
     def get_categories(self):
         return self.get_data(CATEGORY_KEY)
@@ -434,6 +463,8 @@ class Mint(object):
             url = url + "{}={}&".format(endpoint["endingDate"], end_date)
         if id is not None:
             url = url + "id={}&".format(id)
+        if endpoint["type"] is not None:
+            url = url + "type={}&".format(endpoint["type"])
         response = self.get(
             url,
             headers=self._get_api_key_header(),

@@ -46,6 +46,14 @@ def parse_arguments(args):
             },
         ),
         (
+            ("--asset-trends",),
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Retrieve trends related to account assets.",
+            },
+        ),
+        (
             ("--attention",),
             {
                 "action": "store_true",
@@ -362,6 +370,7 @@ def main():
     if not any(
         [
             options.accounts,
+            options.asset_trends,
             options.budgets,
             options.transactions,
             options.net_worth,
@@ -421,6 +430,14 @@ def main():
             budgets = None
 
         data = {"accounts": accounts, "budgets": budgets}
+    elif options.asset_trends:
+        try:
+            data = mint.get_asset_trends(
+                start_date=options.start_date,
+                end_date=options.end_date,
+            )
+        except Exception:
+            data = None
     elif options.budgets:
         try:
             data = mint.get_budgets()
