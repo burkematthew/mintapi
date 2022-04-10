@@ -441,6 +441,7 @@ def main():
     elif options.asset_trends:
         try:
             data = mint.get_asset_trends(
+                limit=options.limit,
                 start_date=options.start_date,
                 end_date=options.end_date,
             )
