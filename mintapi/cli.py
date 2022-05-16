@@ -170,6 +170,13 @@ def parse_arguments(args):
             {"action": "store_true", "help": "Test imap login and retrieval."},
         ),
         (
+            ("--intuit-account",),
+            {
+                "default": None,
+                "help": "The specific Intuit account you want to use in the session, if you have multiple",
+            },
+        ),
+        (
             ("--investments",),
             {
                 "action": "store_true",
@@ -403,6 +410,7 @@ def main():
         wait_for_sync_timeout=options.wait_for_sync_timeout,
         use_chromedriver_on_path=options.use_chromedriver_on_path,
         chromedriver_download_path=options.chromedriver_download_path,
+        intuit_account=options.intuit_account
     )
     atexit.register(mint.close)  # Ensure everything is torn down.
 

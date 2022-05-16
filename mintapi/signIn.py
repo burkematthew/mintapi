@@ -300,6 +300,7 @@ def _create_web_driver_at_mint_com(
             options=chrome_options,
             executable_path=get_stable_chrome_driver(chromedriver_download_path),
         )
+    driver.maximize_window()
     return driver
 
 
@@ -631,10 +632,12 @@ def submit_mfa_code(mfa_token_input, mfa_token_button, mfa_code):
 def account_selection_page(driver, intuit_account):
     # account selection screen -- if there are multiple accounts, select one
     try:
-        select_account = driver.find_element_by_id("ius-mfa-select-account-section")
+        select_account = driver.find_element_by_css_selector(
+            '[data-testid="SelectAccountForm"]'
+        )
         if intuit_account is not None:
             account_input = select_account.find_element_by_xpath(
-                "//label/span[text()='{}']/../preceding-sibling::input".format(
+                "//label/span/div/span[text()='{}']/../../../preceding-sibling::input".format(
                     intuit_account
                 )
             )
